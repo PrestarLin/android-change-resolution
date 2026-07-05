@@ -1,0 +1,68 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.taowen.androidchangeresolution"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.taowen.androidchangeresolution"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += "$buildDir/generated/qtiAssets"
+        }
+    }
+}
+
+def qtiProbeSource = file("src/main/cpp/qti_display_probe.cpp")
+def qtiProbeOutput = layout.buildDirectory.file("generated/qtiAssets/native/arm64-v8a/qti-display-probe")
+
+tasks.register("buildQtiDisplayProbe", Exec) {
+    inputs.file(qtiProbeSource)
+    outputs.file(qtiProbeOutput)
+
+    doFirst {
+        def sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+        if (sdkDir == null || sdkDir.trim().isEmpty()) {
+            throw new GradleException("ANDROID_HOME or ANDROID_SDK_ROOT is required to locate the Android NDK")
+        }
+        def ndkRoot = file("${sdkDir}/ndk")
+        if (!ndkRoot.exists()) {
+            throw new GradleException("Android NDK is required to build qti-display-probe")
+        }
+        def ndkDir = ndkRoot.listFiles()
+                .findAll { it.isDirectory() }
+                .sort { a, b -> b.name <=> a.name }
+                .first()
+        def clang = file("${ndkDir}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++")
+        if (!clang.exists()) {
+            throw new GradleException("Missing NDK compiler: ${clang}")
+        }
+        qtiProbeOutput.get().asFile.parentFile.mkdirs()
+        commandLine clang.absolutePath,
+                "-std=c++17",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-Os",
+                "-s",
+                "-fPIE",
+                "-pie",
+                "-static-libstdc++",
+                qtiProbeSource.absolutePath,
+                "-ldl",
+                "-o",
+                qtiProbeOutput.get().asFile.absolutePath
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn("buildQtiDisplayProbe")
+}
