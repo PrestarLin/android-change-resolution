@@ -360,15 +360,46 @@ public class MainActivity extends Activity implements DisplayManager.DisplayList
             throw new IllegalStateException(result.output.trim());
         }
 
+        boolean setActiveOk = false;
+        if (plan.qtiConfigIndex != null
+                && diagnostics.symbols.getOrDefault("setActiveConfig", false)) {
+            try {
+                String probePath = ensureQtiProbeExecutable();
+                setActiveOk = runSetActiveCommand(plan.qtiConfigIndex, probePath);
+            } catch (Exception ignored) {
+            }
+        }
+
+        final boolean runtimeSwitchOk = setActiveOk;
         mainHandler.post(() -> {
             statusView.setText("Configured " + modeSpec(mode));
             refreshDisplays("Configured " + modeSpec(mode));
-            showMessage("Mode override configured",
-                    "Set " + QUALCOMM_MODE_OVERRIDE_PROP + "=" + propertyValue
-                            + " for display " + display.getDisplayId() + ".\n\n"
-                            + plan.diagnosticsSummary + "\n\n"
-                            + "Replug Type-C to make Qualcomm composer initialize the external display with this mode.");
+            if (runtimeSwitchOk) {
+                showMessage("Mode switched",
+                        "Switched to " + modeSpec(mode) + " on display "
+                                + display.getDisplayId() + ".\n\n"
+                                + plan.diagnosticsSummary);
+            } else {
+                showMessage("Mode override configured",
+                        "Set " + QUALCOMM_MODE_OVERRIDE_PROP + "=" + propertyValue
+                                + " for display " + display.getDisplayId() + ".\n\n"
+                                + plan.diagnosticsSummary + "\n\n"
+                                + "Replug Type-C to make Qualcomm composer initialize the external display with this mode.");
+            }
         });
+    }
+
+    private boolean runSetActiveCommand(int configIndex, String probePath) throws Exception {
+        String command = "chmod 700 " + shellQuote(probePath)
+                + " && LD_LIBRARY_PATH=/vendor/lib64:/system_ext/lib64 "
+                + shellQuote(probePath) + " set-active " + configIndex + " external";
+        CommandResult result = runRootCommand(command);
+        String json = extractJsonObject(result.output);
+        if (!json.isEmpty()) {
+            JSONObject root = new JSONObject(json);
+            return root.optBoolean("ok", false);
+        }
+        return false;
     }
 
     private ForceModePlan createForceModePlan(Display.Mode mode, QualcommDiagnostics diagnostics) {
@@ -418,7 +449,8 @@ public class MainActivity extends Activity implements DisplayManager.DisplayList
             summary.append("\nQTI probe unavailable: ")
                     .append(emptyFallback(diagnostics.rawError(), "unknown error"));
         }
-        return new ForceModePlan(propertyValue, summary.toString());
+        Integer qtiConfigIndex = matches.isEmpty() ? null : matches.get(0).index;
+        return new ForceModePlan(propertyValue, summary.toString(), qtiConfigIndex);
     }
 
     private void ensureRootAvailable() throws Exception {
@@ -782,10 +814,12 @@ public class MainActivity extends Activity implements DisplayManager.DisplayList
     private static final class ForceModePlan {
         final String propertyValue;
         final String diagnosticsSummary;
+        final Integer qtiConfigIndex;
 
-        ForceModePlan(String propertyValue, String diagnosticsSummary) {
+        ForceModePlan(String propertyValue, String diagnosticsSummary, Integer qtiConfigIndex) {
             this.propertyValue = propertyValue;
             this.diagnosticsSummary = diagnosticsSummary;
+            this.qtiConfigIndex = qtiConfigIndex;
         }
     }
 
