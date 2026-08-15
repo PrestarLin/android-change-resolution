@@ -78,9 +78,7 @@ jobs:
           fi
           gh release create "$TAG" "$APK" \
             --title "Android Change Resolution ${TAG}" \
-            --notes "Debug build of commit \`${GITHUB_SHA}\`.
-
-Build triggered by GitHub Actions on a successful build." \
+            --notes "Debug build of commit ${GITHUB_SHA}." \
             --target "$GITHUB_SHA" \
             --prerelease
           echo "Release URL: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
