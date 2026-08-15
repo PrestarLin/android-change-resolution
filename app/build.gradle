@@ -49,34 +49,32 @@ def ndkClangForHost() {
     return clang.exists() ? clang : null
 }
 
-tasks.register("buildQtiDisplayProbe") {
+tasks.register("buildQtiDisplayProbe", Exec) {
     inputs.file(qtiProbeSource)
     outputs.file(qtiProbeOutput)
     onlyIf { ndkClangForHost() != null }
 
-    doLast {
+    doFirst {
         def clang = ndkClangForHost()
         if (clang == null) {
             logger.warn("qti-display-probe: no runnable NDK host toolchain (${System.getProperty('os.name')} / ${System.getProperty('os.arch')}); the native probe will not be embedded. Non-root display diagnostics still work.")
             return
         }
         qtiProbeOutput.get().asFile.parentFile.mkdirs()
-        project.exec {
-            commandLine clang.absolutePath,
-                    "-std=c++17",
-                    "-Wall",
-                    "-Wextra",
-                    "-Werror",
-                    "-Os",
-                    "-s",
-                    "-fPIE",
-                    "-pie",
-                    "-static-libstdc++",
-                    qtiProbeSource.absolutePath,
-                    "-ldl",
-                    "-o",
-                    qtiProbeOutput.get().asFile.absolutePath
-        }
+        commandLine clang.absolutePath,
+                "-std=c++17",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-Os",
+                "-s",
+                "-fPIE",
+                "-pie",
+                "-static-libstdc++",
+                qtiProbeSource.absolutePath,
+                "-ldl",
+                "-o",
+                qtiProbeOutput.get().asFile.absolutePath
     }
 }
 
