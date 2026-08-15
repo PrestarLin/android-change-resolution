@@ -24,42 +24,59 @@ android {
 def qtiProbeSource = file("src/main/cpp/qti_display_probe.cpp")
 def qtiProbeOutput = layout.buildDirectory.file("generated/qtiAssets/native/arm64-v8a/qti-display-probe")
 
-tasks.register("buildQtiDisplayProbe", Exec) {
+def ndkClangForHost() {
+    def sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    if (sdkDir == null || sdkDir.trim().isEmpty()) return null
+    def ndkRoot = file("${sdkDir}/ndk")
+    if (!ndkRoot.exists()) return null
+    def ndkDir = ndkRoot.listFiles()
+            .findAll { it.isDirectory() }
+            .sort { a, b -> b.name <=> a.name }
+            .first()
+    def prebuiltRoot = file("${ndkDir}/toolchains/llvm/prebuilt")
+    if (!prebuiltRoot.exists()) return null
+
+    def os = System.getProperty("os.name").toLowerCase(Locale.ROOT)
+    def osDir = os.contains("win") ? "windows" : os.contains("mac") ? "darwin" : "linux"
+    def arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT)
+    def archDir = (arch.contains("aarch64") || arch.contains("arm64")) ? "aarch64" : "x86_64"
+    def hostDir = "${osDir}-${archDir}"
+
+    def candidates = prebuiltRoot.listFiles()
+            .findAll { it.isDirectory() && it.name == hostDir && new File(it, "bin/aarch64-linux-android26-clang++").exists() }
+    if (!candidates) return null
+    def clang = new File(candidates.first(), "bin/aarch64-linux-android26-clang++")
+    return clang.exists() ? clang : null
+}
+
+tasks.register("buildQtiDisplayProbe") {
     inputs.file(qtiProbeSource)
     outputs.file(qtiProbeOutput)
+    onlyIf { ndkClangForHost() != null }
 
-    doFirst {
-        def sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
-        if (sdkDir == null || sdkDir.trim().isEmpty()) {
-            throw new GradleException("ANDROID_HOME or ANDROID_SDK_ROOT is required to locate the Android NDK")
-        }
-        def ndkRoot = file("${sdkDir}/ndk")
-        if (!ndkRoot.exists()) {
-            throw new GradleException("Android NDK is required to build qti-display-probe")
-        }
-        def ndkDir = ndkRoot.listFiles()
-                .findAll { it.isDirectory() }
-                .sort { a, b -> b.name <=> a.name }
-                .first()
-        def clang = file("${ndkDir}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++")
-        if (!clang.exists()) {
-            throw new GradleException("Missing NDK compiler: ${clang}")
+    doLast {
+        def clang = ndkClangForHost()
+        if (clang == null) {
+            logger.warn("qti-display-probe: no runnable NDK host toolchain (${System.getProperty('os.name')} / ${System.getProperty('os.arch')}); the native probe will not be embedded. Non-root display diagnostics still work.")
+            return
         }
         qtiProbeOutput.get().asFile.parentFile.mkdirs()
-        commandLine clang.absolutePath,
-                "-std=c++17",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-Os",
-                "-s",
-                "-fPIE",
-                "-pie",
-                "-static-libstdc++",
-                qtiProbeSource.absolutePath,
-                "-ldl",
-                "-o",
-                qtiProbeOutput.get().asFile.absolutePath
+        project.exec {
+            commandLine clang.absolutePath,
+                    "-std=c++17",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-Os",
+                    "-s",
+                    "-fPIE",
+                    "-pie",
+                    "-static-libstdc++",
+                    qtiProbeSource.absolutePath,
+                    "-ldl",
+                    "-o",
+                    qtiProbeOutput.get().asFile.absolutePath
+        }
     }
 }
 
